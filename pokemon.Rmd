@@ -1,0 +1,96 @@
+---
+title: 'STA 663: Graduate Project'
+author: "Brian N. White"
+date: "4/7/2020"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r load library, message=FALSE}
+library(tidyverse)
+library(tidymodels)
+library(ranger)
+```
+
+### The Data
+
+### Research Question
+
+Can one use the combat statistics of a pokemon to predict whether or not that pokemon is legendary?
+
+```{r load and attach data}
+pokemon=read.csv("data/Pokemon.csv")
+```
+
+```{r EDA}
+summary(pokemon$Legendary)
+
+65/735
+```
+
+```{r prepare data for model}
+set.seed(7)
+
+poke_split=initial_split(pokemon, prop=0.5)
+
+poke_train=training(poke_split)
+
+poke_test=testing(poke_split)
+
+poke_cv=vfold_cv(poke_train, v=5)
+```
+
+
+```{r tune random forest, cache=TRUE}
+rf_spec=rand_forest(mode="classification",
+                    mtry=floor(sqrt(6)),
+                               trees=tune())  %>%
+  set_engine("ranger")
+
+grid=expand.grid(trees=c(10, 25, 50, 100, 200, 300))
+
+poke_model=tune_grid(rf_spec,
+                     Legendary~Total + HP + Attack + Defense + Sp..Atk + Sp..Def + Speed,
+                     grid=grid,
+                     resamples=poke_cv,
+                     metrics=metric_set(gain_capture, accuracy))
+
+best <- poke_model %>%
+  select_best(metric = "gain_capture") %>%
+  pull()
+```
+
+```{r fit final model}
+rf_final=rand_forest(mode="classification",
+                    mtry=floor(sqrt(6)),
+                               trees=best) %>%
+  set_engine("ranger")
+
+poke_final=fit(rf_final, 
+               Legendary~Total + HP + Attack + Defense + Sp..Atk + Sp..Def + Speed,
+               data=poke_train)
+```
+
+```{r plot confusion matrix}
+poke_final %>%
+  predict(new_data = poke_test) %>%
+  bind_cols(poke_test) %>%
+  conf_mat(truth = Legendary, estimate = .pred_class) %>%
+  autoplot(type = "heatmap")
+```
+```{r accuracy}
+Legendary_Accuracy=26/(14+26)
+Not_Legendary_Accuracy=353/(353+7)
+
+Legendary_Accuracy
+Not_Legendary_Accuracy
+```
+
+
+
+
