@@ -31,6 +31,17 @@ library("tidymodels")
 
 mushroom=read.csv("data/mushrooms.csv")
 ```
+Next, I determined the proportion of poisonous and non-poisonous mushrooms in the data set.
+```{r}
+summary(mushroom$class)
+e.prop=3916/(4208+3961)
+p.prop=4208/(4208+3961)
+
+#~48% non-poisonous, ~52% poisonous
+e.prop
+p.prop
+```
+
 Next, I split the data into a training set and a test set. In addition, I prepped the training data for six-fold cross-validation.
 ```{r create training and testing data}
 mush_split=initial_split(mushroom, prop=0.5)
@@ -45,7 +56,7 @@ I then specified the model and tuned the parameter 'trees'. The optimal number o
 ```{r tune random forest, cache=TRUE}
 #random forest specification for tuning
 rf_tune=rand_forest(mode="classification",
-                    mtry=floor(sqrt(7)),
+                    mtry=floor(sqrt(4)),
                                trees=tune())  %>%
   set_engine("ranger",
              importance="impurity")
@@ -55,10 +66,17 @@ grid=expand.grid(trees=c(10, 25, 50, 100, 200, 300))
 
 #the random forest is tuned
 mush_tune=tune_grid(rf_tune,
-                     class~population + habitat,
+                     class~population + habitat + odor + bruises,
                      grid=grid,
                      resamples=mush_cv,
                      metrics=metric_set(gain_capture, accuracy))
+
+#results of tuning
+
+mush_tune %>%
+  collect_metrics() %>%
+  filter(.metric == "gain_capture") %>%
+  arrange(mean)
 
 #the optimal number of trees, with respect to the gini index, is determined
 best_tree <- mush_tune %>%
@@ -69,14 +87,14 @@ Last, I fit my tuned model on the training data set.
 ```{r fit final model}
 #random forest specificatino with optimal number of trees
 rf_best=rand_forest(mode="classification",
-                    mtry=floor(sqrt(7)),
+                    mtry=floor(sqrt(4)),
                                trees=best_tree) %>%
   set_engine("ranger",
              importance="impurity")
 
 #the model is fit to the training data
 mush_best=fit(rf_best, 
-               class~population + habitat,
+               class~population + habitat + odor + bruises,
                data=mush_train)
 ```
 
@@ -87,7 +105,7 @@ I then used my test data to evaluate the model's performance. The confusion matr
 #generates the confustion matrix for the model on the test data
 mush_best %>%
   predict(new_data = mush_test) %>%
-  bind_cols(mush_best) %>%
+  bind_cols(mush_test) %>%
   conf_mat(truth = class, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 ```
@@ -95,7 +113,7 @@ For completeness, I investigated the importance of each variable to the model. I
 ```{r variable importance}
 
 #variable importance
-var_imp=ranger::importance(mush_final$fit)
+var_imp=ranger::importance(mush_best$fit)
 
 #data frame created for use in plot
 var_imp_df <- data.frame(
