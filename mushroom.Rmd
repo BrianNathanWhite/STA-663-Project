@@ -14,21 +14,29 @@ The data I used for the project can found via the following link:
 
 https://www.kaggle.com/uciml/mushroom-classification
 
-This data set consists of 8124 observations on 23 variables. Each observation is a one of 23 species of gilded mushroom from the Agaricus and Lepiota Family. The variable 'class' tells us whether or not a mushroom is poisonous or not. The remaining 22 variables correspond morphological and ecological characteristics of mushrooms. This information was simulated using the 1981 edition of The Audubon Society Field Guide to North American Mushrooms.
+This data set consists of 8124 observations on 23 variables. Each observation is a one of 23 species of gilded mushroom from the Agaricus and Lepiota Family. The variable 'class' tells us whether or not a mushroom is poisonous or not. The remaining 22 variables correspond morphological and ecological characteristics of mushrooms. Note that every variable in this data set is categorical. This information was simulated using the 1981 edition of The Audubon Society Field Guide to North American Mushrooms.
 
 ### Research Question
 
 Can one predict whether or not a mushroom is poisonous given morphological and ecological data?
 
-```{r message=FALSE}
+### Model Fitting
+
+I began by loading the data and necessary packages.
+```{r, load libraries and data message=FALSE}
 library("xgboost")
+library("rsample")
+library("ranger")
+library("tidymodels")
 
 mushroom=read.csv("data/mushrooms.csv")
 ```
 
-### Model Fitting
-The data is split into a training set and a test set. In addition, the training data is split into six-folds in preperation for cross-validation.
-```{r}
+Next, I split the data into a training set and a test set. In addition, I prepped the training data for six-fold cross-validation.
+
+```{r create training and testing data}
+library(rsample)
+
 set.seed(7)
 
 mush_split=initial_split(mushroom, prop=0.7)
@@ -40,7 +48,7 @@ mush_test=testing(mush_split)
 mush_cv=vfold_cv(mush_train, v=6)
 ```
 
-Next, I specified the model and tuned the parameter 'trees'. The optimal number of trees was found to be 50.
+I then specified the model and tuned the parameter 'trees'. The optimal number of trees was found to be 50.
 
 ```{r tune random forest, cache=TRUE}
 #random forest specification for tuning
@@ -66,6 +74,7 @@ best_rf <- mush_model %>%
   pull()
 ```
 
+Last, I fit my tuned model on the training data set.
 ```{r fit final model}
 #random forest specificatino with optimal number of trees
 rf_final=rand_forest(mode="classification",
@@ -81,6 +90,9 @@ mush_final=fit(rf_final,
 ```
 
 ### Results
+
+I then used my test data to evaluate the model's performance. The confusion matrix below gives a concise visual summary of its performance.
+
 ```{r plot confusion matrix}
 #generates the confustion matrix for the model on the test data
 mush_final %>%
