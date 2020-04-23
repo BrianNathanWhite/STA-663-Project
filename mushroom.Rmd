@@ -2,61 +2,74 @@
 title: 'STA 663: Graduate Project'
 author: "Brian N. White"
 date: "4/19/2020"
-output: pdf_document
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
 ---
 ### Summary
 
-For this project I 
+For this project I asked whether or not one could classify a mushroom as poisonous, or not, using morphological and ecological information about the mushroom. To answer this question I fit a random forest to a mushroom data set obtained from kaggle.com. The parameter I chose to tune was the number of trees used in the bagging process. The model performed extremely well, with a ten-fold CV estimate of the test error, as measured by gain capture, of 1. Thus, the model was likely not overfit. Of note, the model perfectly classified the mushrooms in the full data set. This is not surprising given the 'tree-like' manner in which mycologists classify mushrooms. 
 
 ### The Data
 
 The data I used for the project can found via the following link: 
 
-https://www.kaggle.com/uciml/mushroom-classification
+* https://www.kaggle.com/uciml/mushroom-classification
 
-This data set consists of 8124 observations on 23 variables. Each observation is a one of 23 species of gilded mushroom from the Agaricus and Lepiota Family. The variable 'class' tells us whether or not a mushroom is poisonous or not. The remaining 22 variables correspond morphological and ecological characteristics of mushrooms. Note that every variable in this data set is categorical. This information was simulated using the 1981 edition of The Audubon Society Field Guide to North American Mushrooms.
+This data set consists of 8124 observations on 23 variables. Each observation is a one of 23 species of gilded mushroom from the Agaricus and Lepiota Family. The variable 'class' tells us whether or not a mushroom is poisonous or not. The remaining 22 variables correspond to morphological and ecological characteristics of mushrooms. Note that every variable in this data set is categorical. This information was simulated using the 1981 edition of The Audubon Society Field Guide to North American Mushrooms.
 
 ### Research Question
 
-Can one predict whether or not a mushroom is poisonous given morphological and ecological data?
+* Can one predict whether or not a mushroom is poisonous given morphological and ecological data? (i.e. a classification problem)
 
-### Model Fitting
+### The Model
+
+I decided to use a random forest to answer my research question. This model was chosen for the following three reasons:
+
+1. Mycologists use dichotomous keys to identify mushroom species. A dichotomous key is, in fact, a decision tree. Thus, a tree-based model is a natural choice for the mushroom data.
+
+2. A random forest can be used for classification. Further, the potential predictors are categorical and tree-based methods can easily handle this.
+
+3. We recently studied tree-based methods and so I decided to solidify the material further by implementing a tree-based model on a new data set.
+
+Note, I decided not to use a vanilla decision tree as I assumed that the performance would be inferior to a bagged tree or a boosted tree. Beyond, that my choice to use a random forest as opposed to a boosted tree was arbitrary.
+
+I chose 'class' as my response and a subset of the morphological (i.e. gill and cap) and ecological variables (i.e. habitat and population) as my predictors. In total, I used ten predictors. Thus, as this a random forest, I set $mtry=\sqrt{p}$ where $p=10$. The parameter 'trees' was tuned using a grid of values specified in the code-chunks below.
+
+### Fitting the Model
 
 I began by loading the data and necessary packages.
-```{r, load libraries and data message=FALSE}
-library("xgboost")
+```{r load libraries and data, message=FALSE}
 library("rsample")
 library("ranger")
 library("tidymodels")
 
 mushroom=read.csv("data/mushrooms.csv")
 ```
-Next, I determined the proportion of poisonous and non-poisonous mushrooms in the data set.
+Next, I determined the proportion of poisonous and non-poisonous mushrooms in the data set. There are about the same number of poisonous mushrooms in the data as there are non-poisonous.
 ```{r}
 summary(mushroom$class)
-e.prop=3916/(4208+3961)
-p.prop=4208/(4208+3961)
-
-#~48% non-poisonous, ~52% poisonous
-e.prop
-p.prop
+summary(mushroom$class)[1]/sum(summary(mushroom$class))
+summary(mushroom$class)[2]/sum(summary(mushroom$class))
 ```
-
-Next, I split the data into a training set and a test set. In addition, I prepped the training data for six-fold cross-validation.
+Next, I prepped the data for the ten-fold cross-validation.
 ```{r create training and testing data}
-mush_split=initial_split(mushroom, prop=0.5)
+set.seed(7)
 
-mush_train=training(mush_split)
-
-mush_test=testing(mush_split)
-
-mush_cv=vfold_cv(mush_train, v=6)
+mush_cv=vfold_cv(mushroom, v=10)
 ```
-I then specified the model and tuned the parameter 'trees'. The optimal number of trees was found to be 50.
+I then specified the model and tuned the parameter 'trees'.
+
+To measure the efficacy of the model I calculated the ten-fold CV estimate of the test error, measured via gain capture, for each of the tree values within my grid. The optimal number of trees was found to be 300.
+
+Note that the 'gain_capture' is a ratio from 0 to 1. As per the documentation, it is a ratio in which the perfect scenario is the denominator and the model performance is the numerator. 
 ```{r tune random forest, cache=TRUE}
+set.seed(7)
+
 #random forest specification for tuning
 rf_tune=rand_forest(mode="classification",
-                    mtry=floor(sqrt(4)),
+                    mtry=floor(sqrt(10)),
                                trees=tune())  %>%
   set_engine("ranger",
              importance="impurity")
@@ -66,52 +79,75 @@ grid=expand.grid(trees=c(10, 25, 50, 100, 200, 300))
 
 #the random forest is tuned
 mush_tune=tune_grid(rf_tune,
-                     class~population + habitat + odor + bruises,
+                     class~odor + gill.color + gill.size + 
+                      gill.attachment + gill.spacing + cap.shape + 
+                      cap.surface + cap.color + population + 
+                      habitat,
                      grid=grid,
                      resamples=mush_cv,
                      metrics=metric_set(gain_capture, accuracy))
 
 #results of tuning
-
 mush_tune %>%
   collect_metrics() %>%
   filter(.metric == "gain_capture") %>%
-  arrange(mean)
+  arrange(desc(mean))
 
 #the optimal number of trees, with respect to the gini index, is determined
 best_tree <- mush_tune %>%
   select_best(metric = "gain_capture") %>%
   pull()
 ```
-Last, I fit my tuned model on the training data set.
+
+### Model Evaluation
+
+The tuned random forest has a ten-fold CV estimate of gain capture of 1. In other words, the model is classifying observations in a perfect manner. I was sceptical of this result at first; however, upon further reflection this was not too surprising given that the morphological and environmental features present in the data are what mycologists use in their dichotomous keys to identify mushroom species.
+
+With these facts in mind I feel confident that the random forest is not overfit. As such, I fit my tuned random forest on the full data set and examined the corresponding confusion matrix.
 ```{r fit final model}
-#random forest specificatino with optimal number of trees
+set.seed(7)
+
+#random forest specification with the tuned number of trees
 rf_best=rand_forest(mode="classification",
-                    mtry=floor(sqrt(4)),
+                    mtry=floor(sqrt(10)),
                                trees=best_tree) %>%
   set_engine("ranger",
              importance="impurity")
 
-#the model is fit to the training data
+#the model is fit to the data
 mush_best=fit(rf_best, 
-               class~population + habitat + odor + bruises,
-               data=mush_train)
-```
+               class~odor + gill.color + gill.size + 
+                gill.attachment + gill.spacing + cap.shape + 
+                cap.surface + cap.color + population + 
+                habitat,
+               data=mushroom)
 
-### Results
-
-I then used my test data to evaluate the model's performance. The confusion matrix below gives a concise visual summary of its performance.
-```{r plot confusion matrix}
-#generates the confustion matrix for the model on the test data
+#generates the confusion matrix for the tuned model on the data
 mush_best %>%
-  predict(new_data = mush_test) %>%
-  bind_cols(mush_test) %>%
+  predict(new_data = mushroom) %>%
+  bind_cols(mushroom) %>%
   conf_mat(truth = class, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 ```
-For completeness, I investigated the importance of each variable to the model. In the plot below, 'importance' corresponds to the total amount that the Gini Index is decreased by splits of a given predictor, averaged over the 50 trees.
-```{r variable importance}
 
+I calculated the false positive and false negative rates of classification below. Note, that 'poisonous' is defined to be the 'positive' result in this setting. Observe that the model perfectly classified the mushrooms in the data set.
+```{r false positive and negative rates}
+x=predict(mush_best, mushroom)
+pokemon=mutate(mushroom, predicted_class=x$.pred_class)
+
+pokemon %>%
+  summarise(fpr = 
+              sum(class == "e" & predicted_class == "p") /
+              sum(class == "e"),
+            fnr = 
+              sum(class == "p" & predicted_class == "e") /
+              sum(class  == "p"))
+```
+
+### For fun (Variable Importance)
+
+Although I was only asked to consider the predictive performance of the model, I decided, for completeness, to examine the relative importance of the predictors. In the plot below, 'importance' corresponds to the total amount that the Gini Index is decreased by splits of a given predictor, averaged over the 300 trees. Of the variables I considered, the most important, by far, appears to be 'odor' followed by 'gill.size' and 'gill.color'. It would be interesting to consult a mycologist to see whether or not gill features and mushroom odor are some of the first variables considered in the dichotomous keys that are used for classification.
+```{r variable importance}
 #variable importance
 var_imp=ranger::importance(mush_best$fit)
 
@@ -127,3 +163,7 @@ ggplot(aes(x = variable, y = importance)) +
   geom_col() + 
   coord_flip()
 ```
+
+### Future considerations
+
+I would be curious to see how well a vanilla decision tree performs on this data set given the connection to dichotomous keys. If the predictive performance was preserved it woulld have an interpretive advantage over the random forest. Further, it would open up the opportunity to compare the decision tree with, and perhaps inform, those present in the dichotomous keys used by mycologists.
