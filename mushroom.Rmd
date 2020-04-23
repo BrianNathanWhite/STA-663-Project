@@ -133,9 +133,9 @@ mush_best %>%
 I calculated the false positive and false negative rates of classification below. Note, that 'poisonous' is defined to be the 'positive' result in this setting. Observe that the model perfectly classified the mushrooms in the data set.
 ```{r false positive and negative rates}
 x=predict(mush_best, mushroom)
-pokemon=mutate(mushroom, predicted_class=x$.pred_class)
+mushroom=mutate(mushroom, predicted_class=x$.pred_class)
 
-pokemon %>%
+mushroom %>%
   summarise(fpr = 
               sum(class == "e" & predicted_class == "p") /
               sum(class == "e"),
