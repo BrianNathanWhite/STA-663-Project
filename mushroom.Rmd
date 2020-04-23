@@ -31,15 +31,9 @@ library("tidymodels")
 
 mushroom=read.csv("data/mushrooms.csv")
 ```
-
 Next, I split the data into a training set and a test set. In addition, I prepped the training data for six-fold cross-validation.
-
 ```{r create training and testing data}
-library(rsample)
-
-set.seed(7)
-
-mush_split=initial_split(mushroom, prop=0.7)
+mush_split=initial_split(mushroom, prop=0.5)
 
 mush_train=training(mush_split)
 
@@ -47,12 +41,10 @@ mush_test=testing(mush_split)
 
 mush_cv=vfold_cv(mush_train, v=6)
 ```
-
 I then specified the model and tuned the parameter 'trees'. The optimal number of trees was found to be 50.
-
 ```{r tune random forest, cache=TRUE}
 #random forest specification for tuning
-rf_spec=rand_forest(mode="classification",
+rf_tune=rand_forest(mode="classification",
                     mtry=floor(sqrt(7)),
                                trees=tune())  %>%
   set_engine("ranger",
@@ -62,46 +54,43 @@ rf_spec=rand_forest(mode="classification",
 grid=expand.grid(trees=c(10, 25, 50, 100, 200, 300))
 
 #the random forest is tuned
-mush_model=tune_grid(rf_spec,
-                     class~odor + habitat + gill.size + gill.color + population + ring.number + ring.type,
+mush_tune=tune_grid(rf_tune,
+                     class~population + habitat,
                      grid=grid,
                      resamples=mush_cv,
                      metrics=metric_set(gain_capture, accuracy))
 
 #the optimal number of trees, with respect to the gini index, is determined
-best_rf <- mush_model %>%
+best_tree <- mush_tune %>%
   select_best(metric = "gain_capture") %>%
   pull()
 ```
-
 Last, I fit my tuned model on the training data set.
 ```{r fit final model}
 #random forest specificatino with optimal number of trees
-rf_final=rand_forest(mode="classification",
+rf_best=rand_forest(mode="classification",
                     mtry=floor(sqrt(7)),
-                               trees=best_rf) %>%
+                               trees=best_tree) %>%
   set_engine("ranger",
              importance="impurity")
 
 #the model is fit to the training data
-mush_final=fit(rf_final, 
-               class~odor + habitat + gill.size + gill.color + population + ring.number + ring.type,
+mush_best=fit(rf_best, 
+               class~population + habitat,
                data=mush_train)
 ```
 
 ### Results
 
 I then used my test data to evaluate the model's performance. The confusion matrix below gives a concise visual summary of its performance.
-
 ```{r plot confusion matrix}
 #generates the confustion matrix for the model on the test data
-mush_final %>%
+mush_best %>%
   predict(new_data = mush_test) %>%
-  bind_cols(mush_test) %>%
+  bind_cols(mush_best) %>%
   conf_mat(truth = class, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 ```
-
 For completeness, I investigated the importance of each variable to the model. In the plot below, 'importance' corresponds to the total amount that the Gini Index is decreased by splits of a given predictor, averaged over the 50 trees.
 ```{r variable importance}
 
