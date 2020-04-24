@@ -1,7 +1,7 @@
 ---
 title: 'STA 663: Graduate Project'
 author: "Brian N. White"
-date: "4/19/2020"
+date: "4/24/2020"
 output:
   pdf_document: default
   html_document:
@@ -35,11 +35,11 @@ I decided to use a random forest to answer my research question. This model was 
 
 Note, I decided not to use a vanilla decision tree as I assumed that the performance would be inferior to a bagged tree or a boosted tree. Beyond, that my choice to use a random forest as opposed to a boosted tree was arbitrary.
 
-I chose 'class' as my response and a subset of the morphological (i.e. gill and cap) and ecological variables (i.e. habitat and population) as my predictors. In total, I used ten predictors. Thus, as this a random forest, I set $mtry=\sqrt{p}$ where $p=10$. The parameter 'trees' was tuned using a grid of values specified in the code-chunks below.
+I chose 'class' as my response and the the remaining 22 morphological/ecological variables as my predictors. My model is a random forest so I set $mtry=\sqrt{p}$ where $p=22$. The parameter 'trees' was tuned using a grid of values specified in the code-chunks below.
 
 ### Fitting the Model
 
-I began by loading the data and necessary packages.
+I began by loading the data and necessary packages. Note that I chose to use the tidymodels framework with the 'ranger' library to implement the random forest. 
 ```{r load libraries and data, message=FALSE}
 library("rsample")
 library("ranger")
@@ -53,13 +53,13 @@ summary(mushroom$class)
 summary(mushroom$class)[1]/sum(summary(mushroom$class))
 summary(mushroom$class)[2]/sum(summary(mushroom$class))
 ```
-Next, I prepped the data for the ten-fold cross-validation.
+Next, I prepped the data for ten-fold cross-validation.
 ```{r create training and testing data}
 set.seed(7)
 
 mush_cv=vfold_cv(mushroom, v=10)
 ```
-I then specified the model and tuned the parameter 'trees'.
+I then specified the model, set some preprocessing criteria via a recipe and tuned the parameter 'trees'. For my recipe I first removed variables in the data that were highly sparse and unbalanced. These were variables that only realized one of their levels. In addition, I converted the nominal data in the data to numeric binary model terms. These steps were necessary to transform the data into a form that the 'rand_forest' command could use (Thanks Lucy!).
 
 To measure the efficacy of the model I calculated the ten-fold CV estimate of the test error, measured via gain capture, for each of the tree values within my grid. The optimal number of trees was found to be 300.
 
@@ -105,7 +105,7 @@ best_tree <- mush_tune %>%
 
 The tuned random forest has a ten-fold CV estimate of gain capture of 1. In other words, the model is classifying observations in a perfect manner. I was sceptical of this result at first; however, upon further reflection this was not too surprising given that the morphological and environmental features present in the data are what mycologists use in their dichotomous keys to identify mushroom species.
 
-With these facts in mind I feel confident that the random forest is not overfit. As such, I fit my tuned random forest on the full data set and examined the corresponding confusion matrix.
+With these facts in mind I feel confident that the random forest is not overfit. As such, I fit my tuned random forest on the full data set and examined the corresponding confusion matrix, keeping in mind that the model will likely perform slightly worse on new data.
 ```{r fit final model}
 set.seed(7)
 
@@ -149,7 +149,7 @@ mushroom1 %>%
 
 ### For fun (Variable Importance)
 
-Although I was only asked to consider the predictive performance of the model, I decided, for completeness, to examine the relative importance of the predictors. In the plot below, 'importance' corresponds to the total amount that the Gini Index is decreased by splits of a given predictor, averaged over the 300 trees. Of the variables I considered, the most important, by far, appears to be 'odor' followed by 'gill.size' and 'gill.color'. It would be interesting to consult a mycologist to see whether or not gill features and mushroom odor are some of the first variables considered in the dichotomous keys that are used for classification.
+Although I was only asked to consider the predictive performance of the model, I decided, for completeness, to examine the relative importance of the predictors. In the plot below, 'importance' corresponds to the total amount that the Gini Index is decreased by splits of a given predictor, averaged over the 300 trees. Of the variables I considered, the most important, by far, appears to be 'stalk surfance above ring' followed by 'odor'. It would be interesting to consult a mycologist to see whether or not the features are some of the first variables considered in the dichotomous keys that are used for mushroom classification.
 ```{r variable importance}
 #variable importance
 var_imp=ranger::importance(mush_best$fit)
@@ -160,8 +160,10 @@ var_imp_df <- data.frame(
   importance = var_imp
   )
 
-#plot of variable importance in the model w.r.t. the Gini index
+#modify data frame so that plot will present variables ordered by importance
 var_imp_df %>%
+  mutate(variable = factor(variable, 
+   levels = variable[order(var_imp_df$importance)])) %>%
 ggplot(aes(x = variable, y = importance)) +
   geom_col() + 
   coord_flip()
@@ -169,4 +171,4 @@ ggplot(aes(x = variable, y = importance)) +
 
 ### Future considerations
 
-I would be curious to see how well a vanilla decision tree performs on this data set given the connection to dichotomous keys. If the predictive performance was preserved it woulld have an interpretive advantage over the random forest. Further, it would open up the opportunity to compare the decision tree with, and perhaps inform, those present in the dichotomous keys used by mycologists.
+I would be curious to see how well a vanilla decision tree performs on this data set given the connection to dichotomous keys. If the predictive performance was preserved it woulld have an interpretive advantage over the random forest. Further, it would open up the opportunity to compare the decision tree with, and perhaps inform, those present in the dichotomous keys used by mycologists. Last, but not least, I would be interested in seeing how this model, fit on simulated data, performs on non-simulated data.
