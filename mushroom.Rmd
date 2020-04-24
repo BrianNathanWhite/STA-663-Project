@@ -67,9 +67,14 @@ Note that the 'gain_capture' is a ratio from 0 to 1. As per the documentation, i
 ```{r tune random forest, cache=TRUE}
 set.seed(7)
 
+#recipe to adjust constant variable
+mush_recipe=recipe(class~., data=mushroom) %>%
+  step_nzv(all_predictors()) %>%
+  step_dummy(all_predictors())
+
 #random forest specification for tuning
 rf_tune=rand_forest(mode="classification",
-                    mtry=floor(sqrt(10)),
+                    mtry=floor(sqrt(22)),
                                trees=tune())  %>%
   set_engine("ranger",
              importance="impurity")
@@ -79,10 +84,7 @@ grid=expand.grid(trees=c(10, 25, 50, 100, 200, 300))
 
 #the random forest is tuned
 mush_tune=tune_grid(rf_tune,
-                     class~odor + gill.color + gill.size + 
-                      gill.attachment + gill.spacing + cap.shape + 
-                      cap.surface + cap.color + population + 
-                      habitat,
+                     mush_recipe,
                      grid=grid,
                      resamples=mush_cv,
                      metrics=metric_set(gain_capture, accuracy))
@@ -107,35 +109,36 @@ With these facts in mind I feel confident that the random forest is not overfit.
 ```{r fit final model}
 set.seed(7)
 
+#create modified 'recipe' applied mushroom data set for use with fit function
+mush_juice=prep(mush_recipe) %>%
+  juice
+
 #random forest specification with the tuned number of trees
 rf_best=rand_forest(mode="classification",
-                    mtry=floor(sqrt(10)),
+                    mtry=floor(sqrt(22)),
                                trees=best_tree) %>%
   set_engine("ranger",
              importance="impurity")
 
 #the model is fit to the data
 mush_best=fit(rf_best, 
-               class~odor + gill.color + gill.size + 
-                gill.attachment + gill.spacing + cap.shape + 
-                cap.surface + cap.color + population + 
-                habitat,
-               data=mushroom)
+             class~.,
+               data=mush_juice)
 
 #generates the confusion matrix for the tuned model on the data
 mush_best %>%
-  predict(new_data = mushroom) %>%
-  bind_cols(mushroom) %>%
+  predict(new_data = mush_juice) %>%
+  bind_cols(mush_juice) %>%
   conf_mat(truth = class, estimate = .pred_class) %>%
   autoplot(type = "heatmap")
 ```
 
 I calculated the false positive and false negative rates of classification below. Note, that 'poisonous' is defined to be the 'positive' result in this setting. Observe that the model perfectly classified the mushrooms in the data set.
 ```{r false positive and negative rates}
-x=predict(mush_best, mushroom)
-mushroom=mutate(mushroom, predicted_class=x$.pred_class)
+x=predict(mush_best, mush_juice)
+mushroom1=mutate(mush_juice, predicted_class=x$.pred_class)
 
-mushroom %>%
+mushroom1 %>%
   summarise(fpr = 
               sum(class == "e" & predicted_class == "p") /
               sum(class == "e"),
